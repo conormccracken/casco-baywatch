@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Casco Bay Bridge Status</title>
+    <!-- Tailwind CSS for mobile-first styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Supabase JS Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  </head>
+  <body
+    class="bg-slate-100 text-slate-800 font-sans min-h-screen p-4 md:p-8 flex justify-center"
+  >
+    <div class="max-w-md w-full space-y-6">
+      <!-- Header -->
+      <header class="text-center pt-4">
+        <h1 class="text-2xl font-bold text-slate-900">Casco Bay Bridge</h1>
+        <p class="text-sm text-slate-500">Live Status & Tide Forecast</p>
+      </header>
+
+      <!-- Supabase Status Card -->
+      <div
+        id="status-card"
+        class="bg-white rounded-2xl shadow-sm p-6 text-center border-2 border-transparent transition-all duration-300"
+      >
+        <p
+          class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-2"
+        >
+          Current Status
+        </p>
+
+        <!-- Loading Skeleton -->
+        <div
+          id="status-loading"
+          class="animate-pulse flex space-x-4 justify-center items-center h-16"
+        >
+          <div class="h-4 w-24 bg-slate-200 rounded"></div>
+        </div>
+
+        <!-- Loaded Content -->
+        <div id="status-content" class="hidden">
+          <h2 id="status-text" class="text-3xl font-extrabold mb-1">...</h2>
+          <p id="status-subtext" class="text-slate-600 font-medium">...</p>
+          <p
+            id="status-time"
+            class="text-xs text-slate-400 font-mono mt-3 border-t pt-2 border-slate-100"
+          ></p>
+        </div>
+      </div>
+
+      <!-- NOAA Tide Forecast Card -->
+      <div class="bg-white rounded-2xl shadow-sm p-6">
+        <div class="flex justify-between items-end mb-4">
+          <p
+            class="text-sm font-semibold uppercase tracking-wider text-slate-400"
+          >
+            Portland Tides (Today)
+          </p>
+          <p class="text-xs text-slate-400">Ref: MLLW / ft</p>
+        </div>
+
+        <ul id="tide-list" class="space-y-3 divide-y divide-slate-100">
+          <!-- Loader -->
+          <li class="animate-pulse flex justify-between py-2">
+            <div class="h-4 w-16 bg-slate-200 rounded"></div>
+            <div class="h-4 w-12 bg-slate-200 rounded"></div>
+          </li>
+        </ul>
+        <p class="text-xs text-slate-400 mt-4 text-center">
+          Higher tides reduce clearance, increasing likelihood of a bridge
+          opening.
+        </p>
+      </div>
+    </div>
+
+    <script>
+      // 1. Supabase Configuration (Replace these!)
+      const SUPABASE_URL = "https://bgbusrdpchrrkesyzsgi.supabase.co";
+      const SUPABASE_ANON_KEY =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnYnVzcmRwY2hycmtlc3l6c2dpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDk2MzAsImV4cCI6MjEwMDQyNTYzMH0.Zv35DqseJU4RGPqB_tWXFyhWu0lHvRDUKzgU9j6_0Tk";
+      const supabaseClient = window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_ANON_KEY,
+      );
+
+      // 2. Fetch Bridge Status from Supabase
+      async function fetchBridgeStatus() {
+        const card = document.getElementById("status-card");
+        const loader = document.getElementById("status-loading");
+        const content = document.getElementById("status-content");
+        const textEl = document.getElementById("status-text");
+        const subtextEl = document.getElementById("status-subtext");
+
+        try {
+          // Fetch the most recent status from your table
+          const { data, error } = await supabaseClient
+            .from("bridge_status")
+            .select("status, created_at") // Added created_at
+            .order("id", { ascending: false }) // Added sorting
+            .limit(1)
+            .single();
+
+          if (error) throw error;
+
+          // Determine state
+          const isUp =
+            data.status.toLowerCase().includes("up") ||
+            data.status.toLowerCase() === "closed";
+
+          if (isUp) {
+            textEl.innerText = "The bridge is up!";
+            subtextEl.innerText =
+              "The Casco Bay Bridge is closed to car and pedestrian traffic.";
+            card.classList.add("border-red-500", "bg-red-50");
+            textEl.classList.add("text-red-700");
+          } else {
+            textEl.innerText = "Clear!";
+            subtextEl.innerText =
+              "The Casco Bay Bridge is open to car and pedestrian traffic.";
+            card.classList.add("border-emerald-500", "bg-emerald-50");
+            textEl.classList.add("text-emerald-700");
+          }
+
+          // Format and inject the timestamp
+          const timeEl = document.getElementById("status-time");
+          const updateDate = new Date(data.created_at);
+
+          const formattedTime = updateDate.toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          });
+
+          timeEl.innerText = `Last updated: ${formattedTime}`;
+        } catch (err) {
+          // <-- This is the catch block!
+          console.error("Supabase Error:", err);
+          textEl.innerText = "Status Unknown";
+          subtextEl.innerText = "Could not reach database.";
+        } finally {
+          loader.classList.add("hidden");
+          content.classList.remove("hidden");
+        }
+      }
+
+      // 3. Fetch Tide Data from NOAA
+      async function fetchTides() {
+        const listEl = document.getElementById("tide-list");
+
+        // Portland, ME (8418150) High/Low interval predictions for today
+        const noaaUrl =
+          "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?date=today&station=8418150&product=predictions&datum=MLLW&time_zone=lst_ldt&interval=hilo&units=english&format=json";
+
+        try {
+          const res = await fetch(noaaUrl);
+          const data = await res.json();
+
+          if (data.predictions) {
+            listEl.innerHTML = "";
+
+            data.predictions.forEach((tide) => {
+              // Convert NOAA time (YYYY-MM-DD HH:MM) to readable AM/PM format
+              const timeObj = new Date(tide.t.replace(" ", "T"));
+              const timeStr = timeObj.toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              });
+
+              const isHigh = tide.type === "H";
+              const typeStr = isHigh ? "High Tide" : "Low Tide";
+              const colorClass = isHigh
+                ? "text-blue-600 font-semibold"
+                : "text-slate-500";
+              const height = parseFloat(tide.v).toFixed(1);
+
+              listEl.innerHTML += `
+              <li class="flex justify-between items-center py-2 pt-3">
+                <div class="flex flex-col">
+                  <span class="text-slate-800 font-medium">${timeStr}</span>
+                  <span class="text-xs ${colorClass}">${typeStr}</span>
+                </div>
+                <div class="text-right">
+                  <span class="font-bold text-slate-700">${height} <span class="text-xs font-normal text-slate-400">ft</span></span>
+                </div>
+              </li>
+            `;
+            });
+          }
+        } catch (err) {
+          console.error("NOAA Error:", err);
+          listEl.innerHTML = `<li class="text-sm text-red-500 py-2">Failed to load tide forecast.</li>`;
+        }
+      }
+
+      // Run immediately on load
+      fetchBridgeStatus();
+      fetchTides();
+
+      // Then run again every minute (60,000 milliseconds)
+      setInterval(() => {
+        fetchBridgeStatus();
+      }, 60000);
+    </script>
+  </body>
+</html>

@@ -8,6 +8,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase JS Client -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chart.js for visualization -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   </head>
   <body
     class="bg-slate-100 text-slate-800 font-sans min-h-screen p-4 md:p-8 flex justify-center"
@@ -72,10 +75,22 @@
           opening.
         </p>
       </div>
+
+      <!-- Visualization Card -->
+      <div class="bg-white rounded-2xl shadow-sm p-6 mb-8">
+        <p
+          class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4"
+        >
+          Today's Openings vs. Tide
+        </p>
+        <div class="relative h-48 w-full">
+          <canvas id="tideChart"></canvas>
+        </div>
+      </div>
     </div>
 
     <script>
-      // 1. Supabase Configuration (Replace these!)
+      // 1. Supabase Configuration
       const SUPABASE_URL = "https://bgbusrdpchrrkesyzsgi.supabase.co";
       const SUPABASE_ANON_KEY =
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJnYnVzcmRwY2hycmtlc3l6c2dpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ4NDk2MzAsImV4cCI6MjEwMDQyNTYzMH0.Zv35DqseJU4RGPqB_tWXFyhWu0lHvRDUKzgU9j6_0Tk";
@@ -109,7 +124,7 @@
             data.status.toLowerCase() === "closed";
 
           if (isUp) {
-            textEl.innerText = "The bridge is up!";
+            textEl.innerText = "The bridge is UP!";
             subtextEl.innerText =
               "The Casco Bay Bridge is closed to car and pedestrian traffic.";
             card.classList.add("border-red-500", "bg-red-50");
@@ -202,6 +217,126 @@
       setInterval(() => {
         fetchBridgeStatus();
       }, 60000);
+
+      // 4. Chart.js Visualization
+      async function renderWaveChart() {
+        // 1. Fetch 6-minute continuous tide data for today
+        const noaaWaveUrl =
+          "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?date=today&station=8418150&product=predictions&datum=MLLW&time_zone=lst_ldt&interval=6&units=english&format=json";
+
+        const waveRes = await fetch(noaaWaveUrl);
+        const waveData = await waveRes.json();
+
+        // Format NOAA data for Chart.js {x: timestamp, y: height}
+        const tidePoints = waveData.predictions.map((p) => ({
+          x: new Date(p.t.replace(" ", "T")),
+          y: parseFloat(p.v),
+        }));
+
+        // 2. Fetch today's bridge openings from Supabase
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const { data: events, error } = await supabaseClient
+          .from("bridge_status")
+          .select("created_at, status")
+          .ilike("status", "%up%") // Case-insensitive search for 'up'
+          .gte("created_at", startOfDay.toISOString()); // Only events from today
+
+        if (error) console.error("Error fetching events for chart:", error);
+
+        // 3. Match events to tide heights so they sit exactly on the curve
+        const eventPoints = (events || []).map((event) => {
+          const eventTime = new Date(event.created_at);
+
+          // Find the closest 6-minute tide prediction to this event's timestamp
+          const closestTide = tidePoints.reduce((prev, curr) => {
+            return Math.abs(curr.x - eventTime) < Math.abs(prev.x - eventTime)
+              ? curr
+              : prev;
+          });
+
+          return { x: eventTime, y: closestTide.y };
+        });
+
+        // 4. Render the Mixed Chart
+        const ctx = document.getElementById("tideChart").getContext("2d");
+        new Chart(ctx, {
+          data: {
+            datasets: [
+              {
+                type: "scatter",
+                label: "Bridge Opened",
+                data: eventPoints,
+                backgroundColor: "rgba(239, 68, 68, 1)", // Tailwind red-500
+                borderColor: "white",
+                borderWidth: 2,
+                pointRadius: 6,
+                pointHoverRadius: 8,
+                order: 1, // Ensures dots render on top of the line
+              },
+              {
+                type: "line",
+                label: "Tide Height (ft)",
+                data: tidePoints,
+                borderColor: "rgba(59, 130, 246, 0.5)", // Tailwind blue-500
+                backgroundColor: "rgba(59, 130, 246, 0.1)",
+                borderWidth: 2,
+                fill: true,
+                pointRadius: 0, // Hides dots on the continuous line
+                tension: 0.4, // Creates the smooth sine-wave curves
+                order: 2,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              mode: "index",
+              intersect: false,
+            },
+            plugins: {
+              legend: {
+                display: false, // Hidden to save mobile screen space
+              },
+              tooltip: {
+                callbacks: {
+                  label: function (context) {
+                    if (context.dataset.type === "scatter")
+                      return "Bridge Opened";
+                    return `Tide: ${context.parsed.y.toFixed(1)} ft`;
+                  },
+                },
+              },
+            },
+            scales: {
+              x: {
+                type: "time",
+                time: {
+                  unit: "hour",
+                  displayFormats: { hour: "ha" }, // e.g., "2pm"
+                },
+                grid: { display: false },
+                ticks: { maxTicksLimit: 6 },
+              },
+              y: {
+                grid: { color: "#f1f5f9" },
+                border: { display: false },
+                title: {
+                  display: true,
+                  text: "Feet (MLLW)",
+                  color: "#94a3b8",
+                  font: { size: 10 },
+                },
+              },
+            },
+          },
+        });
+      }
+
+      // Add to your existing initialization block at the bottom:
+      renderWaveChart();
     </script>
   </body>
 </html>

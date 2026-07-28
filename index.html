@@ -144,6 +144,7 @@
           // Format and inject the timestamp
           const timeEl = document.getElementById("status-time");
           const updateDate = new Date(data.created_at);
+          const today = new Date();
 
           const formattedTime = updateDate.toLocaleString([], {
             month: "short",
@@ -152,9 +153,17 @@
             minute: "2-digit",
           });
 
+          const options = {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          };
+
+          const formattedDate = today.toLocaleDateString("en-US", options);
+
           timeEl.innerText = `Latest bridge closure: ${formattedTime}`;
-          document.getElementById("dynamic-date").innerText =
-            updateDate.toLocaleDateString();
+          document.getElementById("dynamic-date").innerText = formattedDate;
         } catch (err) {
           // <-- This is the catch block!
           console.error("Supabase Error:", err);

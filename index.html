@@ -52,6 +52,18 @@
         </div>
       </div>
 
+      <!-- Visualization Card -->
+      <div class="bg-white rounded-2xl shadow-sm p-6 mb-8">
+        <p
+          class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4"
+        >
+          Bridge Activity - <span id="dynamic-date"></span>
+        </p>
+        <div class="relative h-48 w-full">
+          <canvas id="tideChart"></canvas>
+        </div>
+      </div>
+
       <!-- NOAA Tide Forecast Card -->
       <div class="bg-white rounded-2xl shadow-sm p-6">
         <div class="flex justify-between items-end mb-4">
@@ -74,18 +86,6 @@
           Higher tides reduce clearance, increasing likelihood of a bridge
           opening.
         </p>
-      </div>
-
-      <!-- Visualization Card -->
-      <div class="bg-white rounded-2xl shadow-sm p-6 mb-8">
-        <p
-          class="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-4"
-        >
-          Today's Openings vs. Tide
-        </p>
-        <div class="relative h-48 w-full">
-          <canvas id="tideChart"></canvas>
-        </div>
       </div>
     </div>
 
@@ -132,7 +132,7 @@
           } else {
             textEl.innerText = "Clear!";
             subtextEl.innerText =
-              "The Casco Bay Bridge is open to car and pedestrian traffic.";
+              "The Casco Bay Bridge is open \n to car and pedestrian traffic.";
             card.classList.add("border-emerald-500", "bg-emerald-50");
             textEl.classList.add("text-emerald-700");
           }
@@ -148,7 +148,9 @@
             minute: "2-digit",
           });
 
-          timeEl.innerText = `Last updated: ${formattedTime}`;
+          timeEl.innerText = `Latest bridge closure: ${formattedTime}`;
+          document.getElementById("dynamic-date").innerText =
+            updateDate.toLocaleDateString();
         } catch (err) {
           // <-- This is the catch block!
           console.error("Supabase Error:", err);
@@ -298,9 +300,11 @@
             },
             plugins: {
               legend: {
-                display: false, // Hidden to save mobile screen space
+                display: true,
+                position: "bottom",
               },
               tooltip: {
+                enabled: false,
                 callbacks: {
                   label: function (context) {
                     if (context.dataset.type === "scatter")
